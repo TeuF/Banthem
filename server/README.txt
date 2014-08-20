@@ -5,13 +5,13 @@ CLT_ID IP_ID CLT_CRD             EMAIL     UID               CRT_TIME PUSH_TIME 
 1111   7778  512*SHA256(UID+Pwd) gus@a.org sha256(time+rand) datetime datetime  datetime rand
 
 Table T_TYPE : Definit l'attaque qui a eu lieu
-TYPE_ID TYPE
-0001 	toreview
-0002 	false_positive
-0003 	direct php execution
-0004 	php_backdoor
-0005 	php_scouting
-0006 	proxy_scan
+TYPE_ID DESC
+0001 	  toreview
+0002 	  false_positive
+0003 	  direct php execution
+0004 	  php_backdoor
+0005 	  php_scouting
+0006 	  proxy_scan
 
 Table T_HIT: link l'attaque complete, MURL_ID peut etre a null 
 HIT_ID CLT_ID INJ_ID TYPE_ID MURL_ID MFIL_ID HIT_TIME  
@@ -30,7 +30,7 @@ FILE_ID FSHA  FMD5 SSDEEP
 6666    SHA   MD5  A$\\RE 
 
 Table T_IP : Table avec les ip des attaquant
- -> ATT injecteur, BCKD hosteur malware, CLT Client
-IP_ID IP          ATT   BCKD  CLT   FIRSTSEEN LAST_SEEN 
+ -> ATT injecteur, BCK  hosteur malware, CLT Client
+IP_ID IP          ATT   BCK   CLT   FIRSTSEEN LAST_SEEN 
 7777  192.168.1.1 true  false false datetime  datetime 
 7778  192.168.1.2 false false true  datetime  datetime 
