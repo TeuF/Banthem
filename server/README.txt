@@ -14,7 +14,7 @@ TYPE_ID DESC
 0006 	  proxy_scan
 
 Table T_HIT: link l'attaque complete, MURL_ID peut etre a null 
-HIT_ID CLT_ID INJ_ID TYPE_ID MURL_ID MFIL_ID HIT_TIME  
+HIT_ID CLT_ID INJ_ID TYPE_ID MURL_ID FILE_ID HIT_TIME  
 2222   1111   3333   0003    4444    6666    datetime
 
 Table T_INJ : Definit l'injection utilisee
