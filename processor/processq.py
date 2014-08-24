@@ -52,9 +52,27 @@ def get_geoip(ip):
 
 # Get cursor for a IP
 #---------------------------------------
-def update_cursor_ip(ip):
+def create_ip(ip, attacker = False, client = False, bck = False ):
+	global cursor	
+	#cursor.execute("INSERT ips.id FROM ips WHERE address = %s", (ip,))	
+	json_ip = get_geoip(ip)	
+	cursor.execute("INSERT INTO ips (address, country, city, country_code, latitude, longitude, isp, timezone, attacker, client, bck, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,now())",
+	 (json_ip['ip'],
+	json_ip['country'],
+	json_ip['city'],
+	json_ip['country_code'],
+	json_ip['latitude'],
+	json_ip['longitude'],
+	json_ip['isp'],
+	json_ip['timezone'],
+	attacker,
+	client,
+	bck,))
+	return cursor.lastrowid
+
+def update_ip(ip):
 	global cursor
-	cursor.execute("SELECT IP_ID FROM T_IP WHERE IP = %s", (ip,))
+	cursor.execute("SELECT ips.id FROM ips WHERE address = %s", (ip,))
 
 
 # Read configuration file
@@ -195,33 +213,26 @@ for log in logs:
             INJ_ID = cursor.lastrowid
 
 		#---------------------------------------
-        # Update la table IP Attanquant
-		#---------------------------------------
-        update_cursor_ip(IP) 
+        #   Update la table IP Attanquant
+		#---------------------------------------        
         IP_ID = get_id(cursor)
+        print ("IP ID:"+IP_ID)
         if (IP_ID == 'None'):
-            dlog("insert new attaquant IP")
-            json_geoip_data = get_geoip(CIP)			
-			# latitude longitude country city isp
-            cursor.execute(
-                'INSERT INTO T_IP (IP,ATT,LASTSEEN) VALUES (%s, True, now())', (IP,))
-            IP_ID = cursor.lastrowid
+            dlog("insert new attaquant IP")            
+            IP_ID = create_ip(IP, attacker = True)
         else:
             dlog("Update IP")
-            dlog(
-                'UPDATE T_IP SET LASTSEEN=now(),ATT=True WHERE IP_ID = ' +
-                IP_ID)
+            dlog( 'UPDATE T_IP SET LASTSEEN=now(),ATT=True WHERE IP_ID = ' + IP_ID)
+            #update_ip(IP) 
             cursor.execute("UPDATE T_IP SET LASTSEEN = now(), ATT = True WHERE IP_ID = %s", (IP_ID,))
 
-        # Update la client IP
-        update_cursor_ip(CIP)
+		#---------------------------------------
+	    #   Update la table IP Client
+		#---------------------------------------
         IP_ID = get_id(cursor)
         if (IP_ID == 'None'):
             dlog("insert new client IP")
-            geoip = get_geoip(CIP)
-            cursor.execute(
-                'INSERT INTO T_IP (IP,CLT,LASTSEEN) VALUES (%s, True, now())', (CIP,))
-            IP_ID = get_id(cursor)
+            IP_ID = create_ip(IP, client = True)
         else:
             dlog("Update IP")
             cursor.execute(
