@@ -10,17 +10,24 @@ import ConfigParser
 import glob
 import shutil
 import httplib
-
+import sys
 
 def dlog(msg):
     print msg
 
-def get_id(hook):
-    Result = hook.fetchone()
-    if str(Result) == 'None':
+def getid():
+    global cursor
+    return str(cursor.fetchone()[0])
+
+#TODO: Rename !! 
+def get_id(ip):
+    global cursor
+    cursor.execute('SELECT id FROM ips WHERE address = %s ' , (ip, ))
+    ip = cursor.fetchone()
+    if str(ip) == 'None':
         return 'None'
     else:
-        return str(Result[0])
+        return str(ip[0])
 
 # Get GeoIP information
 #---------------------------------------
@@ -55,12 +62,12 @@ def get_geoip(ip):
 def create_ip(ip, attacker = False, client = False, bck = False ):
 	global cursor	
 	#cursor.execute("INSERT ips.id FROM ips WHERE address = %s", (ip,))	
-	json_ip = get_geoip(ip)	
+	json_ip = get_geoip(ip)
 	cursor.execute("INSERT INTO ips (address, country, city, country_code, latitude, longitude, isp, timezone, attacker, client, bck, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,now())",
 	 (json_ip['ip'],
 	json_ip['country'],
 	json_ip['city'],
-	json_ip['country_code'],
+	json_ip['country_code'].lower(),
 	json_ip['latitude'],
 	json_ip['longitude'],
 	json_ip['isp'],
@@ -70,9 +77,10 @@ def create_ip(ip, attacker = False, client = False, bck = False ):
 	bck,))
 	return cursor.lastrowid
 
-def update_ip(ip):
+# TODO: udpate des champs attacker, client, bck si ils changent ... ou s'ajoutent.
+def update_ip(ip, attacker = False, client = False, bck = False ):
 	global cursor
-	cursor.execute("SELECT ips.id FROM ips WHERE address = %s", (ip,))
+	cursor.execute("UPDATE ips SET updated_at = NOW() WHERE address = %s", (ip,))
 
 
 # Read configuration file
@@ -107,28 +115,50 @@ for log in logs:
         dlog('processing ' + log)
         f = open(log, 'r')
         UID = f.readline().rstrip('\n')
-        CIP = f.readline().rstrip('\n')
+        CLIENT_IP = f.readline().rstrip('\n')
         data = f.readline()
-
-        # Update la table Client si pas client ne fait rien
-        cursor.execute('select CLT_ID from T_CLIENT where UID=%s', (UID, ))
-        CLT_ID = get_id(cursor)
-
-        # si pas UID ... stop, drop file, report, checker par php in
-        if (CLT_ID == 'Null'):
-            log('CLT_ID not found')
-            break
-        cursor.execute(
-            'UPDATE T_CLIENT set PUSH_TIME=now() where CLT_ID=%s', (CLT_ID,))
-
     except:
         dlog('error reading report')
+
+    #---------------------------------------
+ 		#   Check and update du Client
+	  #   * Update la table Client si pas client ne fait rien
+		#---------------------------------------
+    cursor.execute('SELECT CLT_ID FROM T_CLIENT WHERE UID = %s', (UID, ))
+    CLIENT_ID = getid()
+
+    # si pas de CLIENT_ID ... stop, drop file, report, checker par php in !
+    if (CLIENT_ID == 'None'):
+        log('CLT_ID not found')
+        #TODO: erase and report error !
+        break
+    
+    print("Start updating data from client id: %s with IP: %s" % (CLIENT_ID, CLIENT_IP))
+    
+    # Update last push time
+    cursor.execute('UPDATE T_CLIENT SET PUSH_TIME=now() WHERE CLT_ID = %s', (CLIENT_ID,))
+    
+    #---------------------------------------
+ 		#   Update la table IP pour le Client
+		#---------------------------------------
+    CLIENT_IP_ID = get_id(CLIENT_IP)
+    if (CLIENT_IP_ID == 'None'):
+        dlog("Insert new client IP: "+CLIENT_IP)
+        CLIENT_IP_ID = create_ip(CLIENT_IP, client = True)
+    else:
+        dlog("Update client IP: "+CLIENT_IP)
+        update_ip(CLIENT_IP, client = True)
+    
+    
+    #---------------------------------------
+ 		#         Load user's data
+		#---------------------------------------
     report = json.loads(data)
     for line in report:
         # print line
             # Scan for http://
         MURL = ''
-        IP = ''
+        ATTACKER_IP = ''
         TYPE_ID = 0  # Not scanned
         candidateF = False
         try:
@@ -136,7 +166,7 @@ for log in logs:
             #//phpsubreg = re.search('<\?php', urllib.unquote_plus(subreg.group(1)))
             INJ_HIT = subreg.group(3)
             M_TIME = subreg.group(2)
-            IP = subreg.group(1)
+            ATTACKER_IP = subreg.group(1)
             httpsubreg = re.search(
                 '((ftp|http)://(\S*))\s',
                 urllib.unquote_plus(
@@ -180,7 +210,7 @@ for log in logs:
         if (TYPE_ID != 3):
             # Fill the malware Url Table
             cursor.execute('select MURL_ID from T_MURL where MURL=%s', (MURL,))
-            MURL_ID = get_id(cursor)
+            MURL_ID = getid()
             if (MURL_ID == 'None'):
                 dlog("insert murl")
                 # Si MURL_ID pas trouve
@@ -192,61 +222,44 @@ for log in logs:
             # Md5 Sum the injection sauve et insert dans db si inexistant
             cursor.execute(
                 'select FILE_ID from T_FILE where FSHA = %s', (FSHA,))
-            FILE_ID = get_id(cursor)
+            FILE_ID = getid()
             if (FILE_ID == 'None'):
                 dlog("insert FILE ")
                 cursor.execute(
                     'insert into T_FILE (FMD5, FSHA, FSSDEEP) VALUES (%s, %s, %s)',
                     (FMD5,
                      FSHA,
-                     FSSDEEP,
-                     ))
+                     FSSDEEP,))
                 FILE_ID = cursor.lastrowid
         # Update la table injection
-        cursor.execute(
-            'select INJ_ID from T_INJ where INJ_HIT = %s', (INJ_HIT,))
-        INJ_ID = get_id(cursor)
+        cursor.execute('select INJ_ID from T_INJ where INJ_HIT = %s', (INJ_HIT,))
+        
+        INJ_ID = getid()
         if (INJ_ID == 'None'):
             dlog("insert Injection")
-            cursor.execute(
-                'insert into T_INJ (INJ_HIT) VALUES (%s) ', (INJ_HIT,))
+            cursor.execute('insert into T_INJ (INJ_HIT) VALUES (%s) ', (INJ_HIT,))
             INJ_ID = cursor.lastrowid
 
-		#---------------------------------------
+				#---------------------------------------
         #   Update la table IP Attanquant
-		#---------------------------------------        
-        IP_ID = get_id(cursor)
-        print ("IP ID:"+IP_ID)
+				#---------------------------------------        
+        IP_ID = get_id(ATTACKER_IP)
         if (IP_ID == 'None'):
-            dlog("insert new attaquant IP")            
-            IP_ID = create_ip(IP, attacker = True)
+            dlog("insert new attacker IP")            
+            IP_ID = create_ip(ATTACKER_IP, attacker = True)
         else:
-            dlog("Update IP")
-            dlog( 'UPDATE T_IP SET LASTSEEN=now(),ATT=True WHERE IP_ID = ' + IP_ID)
-            #update_ip(IP) 
-            cursor.execute("UPDATE T_IP SET LASTSEEN = now(), ATT = True WHERE IP_ID = %s", (IP_ID,))
+            #TODO: Mettre dans un tableau les ip et faire un seul update pour toute les IP !!!
+            dlog("Update last_seen attacker IP: "+ATTACKER_IP)
+            update_ip(ATTACKER_IP)
 
-		#---------------------------------------
-	    #   Update la table IP Client
-		#---------------------------------------
-        IP_ID = get_id(cursor)
-        if (IP_ID == 'None'):
-            dlog("insert new client IP")
-            IP_ID = create_ip(IP, client = True)
-        else:
-            dlog("Update IP")
-            cursor.execute(
-                'UPDATE T_IP SET CLT=True, LASTSEEN=now() WHERE IP_ID = %s', (IP_ID,))
-
-        # Updated Client
-        cursor.execute('UPDATE T_CLIENT SET PUSH_TIME=now() WHERE CLT_ID=%s', (CLT_ID,))
 
         # Insert HIT
-        dlog('insert HIt')
+        # TODO: check if not already added !!!
+        dlog('Insert Hit')
         if (TYPE_ID != 3):
             cursor.execute(
                 'INSERT INTO T_HIT (CLT_ID,INJ_ID,TYPE_ID,MURL_ID,HIT_TIME) VALUES (%s, %s, %s,%s, now())',
-                (CLT_ID,
+                (CLIENT_ID,
                  INJ_ID,
                  TYPE_ID,
                  MURL_ID,
@@ -254,14 +267,14 @@ for log in logs:
         else:
             cursor.execute(
                 'INSERT INTO T_HIT (CLT_ID,INJ_ID,TYPE_ID,FILE_ID,HIT_TIME) VALUES (%s, %s, %s,%s, now())',
-                (CLT_ID,
+                (CLIENT_ID,
                  INJ_ID,
                  TYPE_ID,
                  FILE_ID,
                  ))
 
         # Commit database
-        cursor.connection.commit()
+        db.commit()
 
         # close file and move to outq
         f.close()
